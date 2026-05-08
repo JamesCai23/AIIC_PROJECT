@@ -74,24 +74,25 @@ app.post('/api/generate-image', async (req, res) => {
   }
 
   try {
-    const response = await openai.images.generate({
+    const response = await openai.chat.completions.create({
       model: model || imageModels[0],
-      prompt,
-      n: 1,
+      messages: [{ role: 'user', content: prompt }],
     });
 
-    const imageUrl = response.data[0]?.url;
-    if (!imageUrl) {
-      throw new Error('No image URL returned');
+    const images = response.choices?.[0]?.message?.images;
+    if (!images?.[0]?.image_url?.url) {
+      throw new Error('No image returned');
     }
 
-    const imgRes = await fetch(imageUrl);
-    if (!imgRes.ok) {
-      throw new Error(`Failed to download image: ${imgRes.statusText}`);
+    const dataUrl = images[0].image_url.url;
+    const matches = dataUrl.match(/^data:image\/(\w+);base64,(.+)$/);
+    if (!matches) {
+      throw new Error('Invalid image data');
     }
 
-    const buffer = Buffer.from(await imgRes.arrayBuffer());
-    const filename = `img-${Date.now()}.png`;
+    const ext = matches[1] === 'jpeg' ? 'jpg' : matches[1];
+    const buffer = Buffer.from(matches[2], 'base64');
+    const filename = `img-${Date.now()}.${ext}`;
     const dir = path.join('public', 'images');
     mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, filename), buffer);
