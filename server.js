@@ -2,6 +2,8 @@ import 'dotenv/config';
 import express from 'express';
 import OpenAI from 'openai';
 import cors from 'cors';
+import { writeFileSync, mkdirSync } from 'fs';
+import path from 'path';
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -20,7 +22,7 @@ const openai = new OpenAI({
 });
 
 app.post('/api/chat', async (req, res) => {
-  const { message, history = [] } = req.body;
+  const { message, history = [], model } = req.body;
 
   if (!message) {
     return res.status(400).json({ error: 'Message is required' });
@@ -38,7 +40,7 @@ app.post('/api/chat', async (req, res) => {
 
   try {
     const stream = await openai.chat.completions.create({
-      model: 'deepseek/deepseek-chat',
+      model: model || 'deepseek/deepseek-chat',
       messages,
       stream: true,
     });
@@ -59,6 +61,45 @@ app.post('/api/chat', async (req, res) => {
     console.error('OpenRouter API error:', err);
     res.write(`data: ${JSON.stringify({ error: err.message || 'Internal server error' })}\n\n`);
     res.end();
+  }
+});
+
+const imageModels = ['bytedance-seed/seedream-4.5'];
+
+app.post('/api/generate-image', async (req, res) => {
+  const { prompt, model } = req.body;
+
+  if (!prompt) {
+    return res.status(400).json({ error: 'Prompt is required' });
+  }
+
+  try {
+    const response = await openai.images.generate({
+      model: model || imageModels[0],
+      prompt,
+      n: 1,
+    });
+
+    const imageUrl = response.data[0]?.url;
+    if (!imageUrl) {
+      throw new Error('No image URL returned');
+    }
+
+    const imgRes = await fetch(imageUrl);
+    if (!imgRes.ok) {
+      throw new Error(`Failed to download image: ${imgRes.statusText}`);
+    }
+
+    const buffer = Buffer.from(await imgRes.arrayBuffer());
+    const filename = `img-${Date.now()}.png`;
+    const dir = path.join('public', 'images');
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, filename), buffer);
+
+    res.json({ url: `/images/${filename}` });
+  } catch (err) {
+    console.error('Image generation error:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
