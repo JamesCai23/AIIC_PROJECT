@@ -38,7 +38,7 @@ app.post('/api/chat', async (req, res) => {
 
   try {
     const stream = await openai.chat.completions.create({
-      model: 'openai/gpt-4o-mini',
+      model: 'deepseek/deepseek-chat',
       messages,
       stream: true,
     });
