@@ -1,200 +1,197 @@
-const chat = document.getElementById('chat');
-const form = document.getElementById('form');
-const input = document.getElementById('input');
-const sendBtn = document.getElementById('send-btn');
-const modelSelect = document.getElementById('model-select');
+// ── State ────────────────────────────────────────────────────────
+const state = {
+  phase: 'lobby',
+  stage: 1,
+  resume: '',
+  history: [],
+  isStreaming: false,
+  isRecording: false,
+  recognition: null,
+  cameraStream: null,
+  timerInterval: null,
+  elapsedSeconds: 0,
+};
 
-let messageHistory = [];
-let isStreaming = false;
+const STAGE_LABELS = { 1: '自我介绍', 2: '简历提问', 3: '场景技术', 4: '算法挑战' };
 
-const imageModels = ['bytedance-seed/seedream-4.5'];
+function getSystemMessage(msg) {
+  if (msg === '__START_INTERVIEW__') return '请开始面试';
+  const m = msg.match(/^__START_STAGE__(\d)$/);
+  if (m) return `我们已经进入下一阶段（${STAGE_LABELS[m[1]]}），请根据本阶段要求继续面试。`;
+  return msg;
+}
 
-modelSelect.addEventListener('change', () => {
-  const isImage = imageModels.includes(modelSelect.value);
-  input.placeholder = isImage
-    ? 'Describe the image you want to generate...'
-    : 'Type your message...';
-  input.focus();
+// ── DOM refs ────────────────────────────────────────────────────
+const $ = (id) => document.getElementById(id);
+const lobby = $('lobby');
+const meeting = $('meeting');
+const transcript = $('transcript');
+const input = $('input');
+const sendBtn = $('send-btn');
+const micBtn = $('mic-btn');
+const resumeInput = $('resume-input');
+const resumeFile = $('resume-file');
+const fileName = $('file-name');
+const startBtn = $('start-btn');
+const nextStageBtn = $('next-stage-btn');
+const leaveBtn = $('leave-btn');
+const recordingBar = $('recording-bar');
+const webcam = $('webcam');
+const camPlaceholder = $('cam-placeholder');
+const stageLabel = $('stage-label');
+const timerEl = $('timer');
+const speakingIndicator = $('speaking-indicator');
+
+// ── File Upload ─────────────────────────────────────────────────
+resumeFile.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  fileName.textContent = file.name;
+  const reader = new FileReader();
+  reader.onload = () => { resumeInput.value = reader.result; };
+  reader.readAsText(file);
 });
 
-function addMessage(role, content) {
-  const div = document.createElement('div');
-  div.className = `message ${role}`;
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble';
-  if (role === 'user') {
-    bubble.textContent = content;
-  }
-  const avatar = document.createElement('div');
-  avatar.className = 'avatar';
-  avatar.textContent = role === 'user' ? '👤' : '🤖';
-  div.appendChild(avatar);
-  div.appendChild(bubble);
-  chat.appendChild(div);
-  chat.scrollTop = chat.scrollHeight;
-  return bubble;
-}
-
-function addImageMessage(role, imageUrl, prompt) {
-  const div = document.createElement('div');
-  div.className = `message ${role}`;
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble image-bubble';
-
-  const img = document.createElement('img');
-  img.src = imageUrl;
-  img.alt = prompt || 'Generated image';
-  img.className = 'generated-image';
-  bubble.appendChild(img);
-
-  const actions = document.createElement('div');
-  actions.className = 'image-actions';
-
-  const previewBtn = document.createElement('button');
-  previewBtn.className = 'img-action-btn';
-  previewBtn.textContent = '🔍 Preview';
-  previewBtn.addEventListener('click', () => openPreview(imageUrl));
-
-  const downloadBtn = document.createElement('button');
-  downloadBtn.className = 'img-action-btn';
-  downloadBtn.innerHTML = '⬇ Download';
-  downloadBtn.addEventListener('click', () => downloadImage(imageUrl, prompt));
-
-  actions.appendChild(previewBtn);
-  actions.appendChild(downloadBtn);
-  bubble.appendChild(actions);
-
-  const avatar = document.createElement('div');
-  avatar.className = 'avatar';
-  avatar.textContent = '🤖';
-  div.appendChild(avatar);
-  div.appendChild(bubble);
-  chat.appendChild(div);
-  chat.scrollTop = chat.scrollHeight;
-}
-
-function openPreview(imageUrl) {
-  const overlay = document.createElement('div');
-  overlay.className = 'preview-overlay';
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
-  });
-
-  const img = document.createElement('img');
-  img.src = imageUrl;
-  img.className = 'preview-image';
-
-  const closeBtn = document.createElement('button');
-  closeBtn.className = 'preview-close';
-  closeBtn.textContent = '✕';
-  closeBtn.addEventListener('click', () => overlay.remove());
-
-  overlay.appendChild(img);
-  overlay.appendChild(closeBtn);
-  document.body.appendChild(overlay);
-
-  document.addEventListener('keydown', handler = (e) => {
-    if (e.key === 'Escape') {
-      overlay.remove();
-      document.removeEventListener('keydown', handler);
-    }
-  });
-}
-
-function downloadImage(imageUrl, prompt) {
-  const a = document.createElement('a');
-  a.href = imageUrl;
-  a.download = `${prompt ? prompt.slice(0, 30) : 'image'}.png`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-
+// ── Keyboard ────────────────────────────────────────────────────
+input.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
+});
 function autoResize() {
   input.style.height = 'auto';
-  input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+  input.style.height = Math.min(input.scrollHeight, 100) + 'px';
+}
+input.addEventListener('input', autoResize);
+sendBtn.addEventListener('click', handleSend);
+
+// ── Timer ───────────────────────────────────────────────────────
+function startTimer() {
+  state.elapsedSeconds = 0;
+  updateTimerDisplay();
+  state.timerInterval = setInterval(() => {
+    state.elapsedSeconds++;
+    updateTimerDisplay();
+  }, 1000);
 }
 
-input.addEventListener('input', autoResize);
+function stopTimer() {
+  clearInterval(state.timerInterval);
+  state.timerInterval = null;
+}
 
-input.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    form.dispatchEvent(new Event('submit'));
+function updateTimerDisplay() {
+  const m = String(Math.floor(state.elapsedSeconds / 60)).padStart(2, '0');
+  const s = String(state.elapsedSeconds % 60).padStart(2, '0');
+  timerEl.textContent = `${m}:${s}`;
+}
+
+// ── Camera ──────────────────────────────────────────────────────
+async function startCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { width: { ideal: 320 }, height: { ideal: 240 }, facingMode: 'user' },
+      audio: false,
+    });
+    webcam.srcObject = stream;
+    state.cameraStream = stream;
+    camPlaceholder.classList.add('hidden');
+  } catch (_) {
+    camPlaceholder.classList.remove('hidden');
   }
+}
+
+function stopCamera() {
+  if (state.cameraStream) {
+    state.cameraStream.getTracks().forEach(t => t.stop());
+    state.cameraStream = null;
+  }
+}
+
+// ── Start Interview ─────────────────────────────────────────────
+startBtn.addEventListener('click', async () => {
+  const resume = resumeInput.value.trim();
+  if (!resume) {
+    resumeInput.style.borderColor = '#ef4444';
+    resumeInput.focus();
+    setTimeout(() => resumeInput.style.borderColor = '', 2000);
+    return;
+  }
+
+  state.resume = resume;
+  state.phase = 'interview';
+  state.stage = 1;
+  state.history = [];
+
+  lobby.classList.add('hidden');
+  meeting.classList.remove('hidden');
+
+  clearTranscript();
+  updateStageUI(1);
+  nextStageBtn.textContent = '下一环节 →';
+
+  await startCamera();
+  startTimer();
+  await sendToAI('__START_INTERVIEW__');
 });
 
-form.addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const text = input.value.trim();
-  if (!text || isStreaming) return;
+// ── Leave / Restart ──────────────────────────────────────────────
+leaveBtn.addEventListener('click', () => {
+  if (state.isStreaming) return;
+  stopCamera();
+  stopTimer();
+  if (state.recognition) { try { state.recognition.abort(); } catch (_) {} }
 
+  state.phase = 'lobby';
+  state.stage = 1;
+  state.history = [];
+  state.isRecording = false;
+
+  meeting.classList.add('hidden');
+  lobby.classList.remove('hidden');
+  clearTranscript();
+  nextStageBtn.textContent = '下一环节 →';
+  nextStageBtn.disabled = false;
+
+  // Reset camera placeholder
+  camPlaceholder.classList.remove('hidden');
+});
+
+// ── Send ────────────────────────────────────────────────────────
+async function handleSend() {
+  const text = input.value.trim();
+  if (!text || state.isStreaming || state.phase !== 'interview') return;
   input.value = '';
   input.style.height = 'auto';
-  isStreaming = true;
-  sendBtn.disabled = true;
-
-  const selectedModel = modelSelect.value;
-
-  addMessage('user', text);
-  messageHistory.push({ role: 'user', content: text });
-
-  if (imageModels.includes(selectedModel)) {
-    await generateImage(text);
-  } else {
-    await chatStream(text, selectedModel);
-  }
-
-  isStreaming = false;
-  sendBtn.disabled = false;
-  input.focus();
-});
-
-async function generateImage(prompt) {
-  const bubble = addMessage('bot', '');
-  const parent = bubble.parentElement;
-  parent.classList.add('typing');
-
-  try {
-    const res = await fetch('/api/generate-image', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt }),
-    });
-
-    const data = await res.json();
-
-    parent.classList.remove('typing');
-    if (data.error) {
-      bubble.textContent = `Error: ${data.error}`;
-      return;
-    }
-
-    bubble.remove();
-    addImageMessage('bot', data.url, prompt);
-    messageHistory.push({ role: 'assistant', content: `[Image: ${data.url}]` });
-  } catch (err) {
-    parent.classList.remove('typing');
-    bubble.textContent = 'Image generation failed. Please try again.';
-  }
+  await sendToAI(text);
 }
 
-async function chatStream(message, model) {
-  const bubble = addMessage('bot', '');
-  const parent = bubble.parentElement;
-  parent.classList.add('typing');
+// ── Send message to AI ──────────────────────────────────────────
+async function sendToAI(userMessage) {
+  state.isStreaming = true;
+  sendBtn.disabled = true;
+  nextStageBtn.classList.add('hidden');
+  showSpeaking(true);
+
+  const isSystemTrigger = userMessage.startsWith('__');
+
+  if (!isSystemTrigger) {
+    addTranscript('user', userMessage);
+    state.history.push({ role: 'user', content: userMessage });
+  }
+
+  const msgEl = addTranscript('ai', '');
+  const parent = msgEl.closest('.tmsg');
+  if (parent) parent.classList.add('typing');
 
   try {
-    const res = await fetch('/api/chat', {
+    const res = await fetch('/api/interview/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message, history: messageHistory.slice(-20), model }),
+      body: JSON.stringify({
+        message: isSystemTrigger ? getSystemMessage(userMessage) : userMessage,
+        history: state.history,
+        stage: state.stage,
+        resume: state.resume,
+      }),
     });
 
     const reader = res.body.getReader();
@@ -215,28 +212,208 @@ async function chatStream(message, model) {
         const data = JSON.parse(line.slice(6));
 
         if (data.error) {
-          bubble.textContent = `Error: ${data.error}`;
-          parent.classList.remove('typing');
+          msgEl.textContent = `错误：${data.error}`;
+          if (parent) parent.classList.remove('typing');
+          finish();
           return;
         }
 
         if (data.done) {
           fullContent = data.fullContent;
-          bubble.textContent = fullContent;
-          parent.classList.remove('typing');
-          messageHistory.push({ role: 'assistant', content: fullContent });
+          msgEl.innerHTML = formatMessage(fullContent);
+          if (parent) parent.classList.remove('typing');
+
+          if (!isSystemTrigger || userMessage === '__START_INTERVIEW__') {
+            state.history.push({ role: 'assistant', content: fullContent });
+          } else if (userMessage.startsWith('__START_STAGE__')) {
+            // For stage transitions, push the greeting as first message of new stage
+            state.history.push({ role: 'assistant', content: fullContent });
+          }
+
+          finish();
           return;
         }
 
         if (data.content) {
           fullContent += data.content;
-          bubble.textContent = fullContent;
-          chat.scrollTop = chat.scrollHeight;
+          msgEl.innerHTML = formatMessage(fullContent);
+          transcript.scrollTop = transcript.scrollHeight;
         }
       }
     }
   } catch (err) {
-    bubble.textContent = 'Connection error. Please try again.';
-    parent.classList.remove('typing');
+    msgEl.textContent = '连接失败，请重试。';
+    if (parent) parent.classList.remove('typing');
+  }
+
+  finish();
+
+  function finish() {
+    state.isStreaming = false;
+    sendBtn.disabled = false;
+    input.focus();
+    nextStageBtn.classList.remove('hidden');
+    showSpeaking(false);
   }
 }
+
+// ── Next Stage ──────────────────────────────────────────────────
+nextStageBtn.addEventListener('click', async () => {
+  if (state.isStreaming) return;
+
+  if (state.stage >= 4) {
+    finishInterview();
+    return;
+  }
+
+  state.stage++;
+  updateStageUI(state.stage);
+  nextStageBtn.classList.add('hidden');
+
+  if (state.stage === 4) {
+    nextStageBtn.textContent = '结束面试';
+  }
+
+  // Don't add transition to visible history
+  await sendToAI(`__START_STAGE__${state.stage}`);
+});
+
+// ── Finish Interview ────────────────────────────────────────────
+function finishInterview() {
+  state.phase = 'finished';
+  stopTimer();
+  nextStageBtn.textContent = '面试已结束 ✓';
+  nextStageBtn.disabled = true;
+  addTranscript('ai', '🎉 **面试全部结束！**\n\n感谢你参与本次模拟面试。你可以点击左下角"离开"按钮回到等候室。');
+}
+
+// ── Speaking indicator ──────────────────────────────────────────
+function showSpeaking(on) {
+  speakingIndicator.classList.toggle('hidden', !on);
+}
+
+// ── Stage UI ────────────────────────────────────────────────────
+function updateStageUI(stage) {
+  stageLabel.textContent = `${stage} / 4 ${STAGE_LABELS[stage]}`;
+
+  document.querySelectorAll('.sdot').forEach(d => {
+    const s = parseInt(d.dataset.s);
+    d.classList.remove('active', 'completed');
+    if (s < stage) d.classList.add('completed');
+    if (s === stage) d.classList.add('active');
+  });
+
+  document.querySelectorAll('.slabel').forEach((l, i) => {
+    const idx = i + 1;
+    l.classList.remove('active', 'completed');
+    if (idx < stage) l.classList.add('completed');
+    if (idx === stage) l.classList.add('active');
+  });
+}
+
+// ── Speech-to-Text ──────────────────────────────────────────────
+const SpeechRecog = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+if (SpeechRecog) {
+  state.recognition = new SpeechRecog();
+  state.recognition.lang = 'zh-CN';
+  state.recognition.continuous = true;
+  state.recognition.interimResults = true;
+
+  state.recognition.onresult = (e) => {
+    let final = '';
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    if (final) input.value = (input.value || '') + final;
+    input.placeholder = interim ? `正在听: ${interim}...` : '输入回答...';
+    autoResize();
+  };
+
+  state.recognition.onend = () => {
+    if (state.isRecording && state.recognition) {
+      try { state.recognition.start(); } catch (_) {}
+    }
+  };
+
+  state.recognition.onerror = (e) => {
+    if (e.error === 'not-allowed') alert('请允许使用麦克风权限以使用语音输入功能。');
+    stopRecording();
+  };
+
+  micBtn.addEventListener('click', toggleRecording);
+} else {
+  micBtn.title = '不支持语音输入';
+  micBtn.style.opacity = '0.3';
+  micBtn.style.cursor = 'not-allowed';
+}
+
+function toggleRecording() {
+  if (!state.recognition) return;
+  state.isRecording ? stopRecording() : startRecording();
+}
+
+function startRecording() {
+  state.isRecording = true;
+  micBtn.classList.add('recording');
+  recordingBar.classList.remove('hidden');
+  input.placeholder = '正在聆听...';
+  try { state.recognition.start(); } catch (_) {}
+}
+
+function stopRecording() {
+  state.isRecording = false;
+  micBtn.classList.remove('recording');
+  recordingBar.classList.add('hidden');
+  input.placeholder = '输入回答...';
+  try { state.recognition.stop(); } catch (_) {}
+}
+
+// ── Transcript helpers ──────────────────────────────────────────
+function addTranscript(role, text) {
+  // Remove placeholder if present
+  const ph = transcript.querySelector('.transcript-placeholder');
+  if (ph) ph.remove();
+
+  const div = document.createElement('div');
+  div.className = `tmsg ${role}`;
+
+  const icon = document.createElement('div');
+  icon.className = 'tmsg-icon';
+  icon.textContent = role === 'ai' ? '🤖' : '👤';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'tmsg-bubble';
+  if (text) bubble.innerHTML = formatMessage(text);
+
+  div.appendChild(icon);
+  div.appendChild(bubble);
+  transcript.appendChild(div);
+  transcript.scrollTop = transcript.scrollHeight;
+  return bubble;
+}
+
+function clearTranscript() {
+  transcript.innerHTML = '';
+}
+
+function escapeHtml(text) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  return d.innerHTML;
+}
+
+function formatMessage(text) {
+  return escapeHtml(text)
+    .replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
+    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
+    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/\n/g, '<br>');
+}
+
+// ── Ctrl+Enter to send ──────────────────────────────────────────
+document.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleSend();
+});

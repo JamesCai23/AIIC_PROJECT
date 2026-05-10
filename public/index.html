@@ -1,42 +1,167 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AIIC Chatbot</title>
+  <title>AI 面试官 — 模拟面试</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>AIIC Chatbot</h1>
-      <p class="subtitle">Powered by OpenRouter</p>
-      <div class="model-selector">
-        <select id="model-select">
-          <option value="deepseek/deepseek-chat">DeepSeek Chat</option>
-          <option value="tencent/hy3-preview:free">Tencent Hy3 (Free)</option>
-          <option value="moonshotai/kimi-k2.6">Kimi K2.6</option>
-          <option value="bytedance-seed/seedream-4.5">Seedream 4.5 (Image)</option>
-        </select>
+  <div class="app">
+
+    <!-- ════ Waiting Room / Setup ════ -->
+    <div id="lobby" class="lobby">
+      <div class="lobby-card">
+        <div class="lobby-icon">
+          <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+            <rect x="8" y="12" width="32" height="24" rx="4" stroke="#3b82f6" stroke-width="2.5" fill="rgba(59,130,246,0.1)"/>
+            <circle cx="24" cy="22" r="5" stroke="#3b82f6" stroke-width="2" fill="rgba(59,130,246,0.15)"/>
+            <path d="M14 36c0-4 4.5-7 10-7s10 3 10 7" stroke="#3b82f6" stroke-width="2" stroke-linecap="round"/>
+            <circle cx="39" cy="28" r="6" stroke="#22c55e" stroke-width="2" fill="rgba(34,197,94,0.15)"/>
+            <path d="M39 24v8M35 28h8" stroke="#22c55e" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <h1>AI 模拟面试官</h1>
+        <p class="lobby-subtitle">针对实习岗位 · 智能面试练习 · 4个环节</p>
+
+        <div class="resume-area">
+          <label class="area-label">📄 上传简历（或粘贴内容）</label>
+          <textarea id="resume-input" rows="7" placeholder="将简历内容粘贴到这里...&#10;&#10;支持 .txt 文件上传，PDF 请复制文本后粘贴"></textarea>
+          <div class="file-row">
+            <input type="file" id="resume-file" accept=".txt,.md">
+            <label for="resume-file" class="file-btn">📁 选择文件</label>
+            <span id="file-name" class="file-name">未选择文件</span>
+          </div>
+        </div>
+
+        <button id="start-btn" class="btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/></svg>
+          加入面试
+        </button>
+        <p class="lobby-hint">需要开启摄像头 · 约 25-30 分钟</p>
       </div>
-    </header>
-    <main>
-      <div id="chat" class="chat">
-        <div class="message bot">
-          <div class="avatar">🤖</div>
-          <div class="bubble">Hello! I'm an AI assistant. How can I help you today?</div>
+    </div>
+
+    <!-- ════ Meeting Room ════ -->
+    <div id="meeting" class="meeting hidden">
+
+      <!-- Top bar -->
+      <div class="top-bar">
+        <div class="meeting-info">
+          <span class="meeting-dot"></span>
+          <span>AI 模拟面试</span>
+          <span class="meeting-sep">|</span>
+          <span class="meeting-stage" id="stage-label">1 / 4 自我介绍</span>
+        </div>
+        <div class="top-right">
+          <span class="timer" id="timer">00:00</span>
         </div>
       </div>
-      <form id="form" class="input-area">
-        <textarea id="input" rows="1" placeholder="Type your message..." autofocus></textarea>
-        <button type="submit" id="send-btn" aria-label="Send message">
+
+      <!-- Main content -->
+      <div class="main-content">
+
+        <!-- Video grid -->
+        <div class="video-grid">
+          <!-- User webcam -->
+          <div class="participant" id="user-cam">
+            <video id="webcam" autoplay muted playsinline></video>
+            <div class="cam-placeholder hidden" id="cam-placeholder">
+              <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
+                <circle cx="24" cy="16" r="8" stroke="#52525b" stroke-width="2.5" fill="rgba(82,82,91,0.2)"/>
+                <path d="M10 42c0-8 6-14 14-14s14 6 14 14" stroke="#52525b" stroke-width="2.5" stroke-linecap="round"/>
+              </svg>
+            </div>
+            <div class="participant-label">
+              <span class="name-dot"></span>
+              我
+            </div>
+          </div>
+
+          <!-- AI interviewer avatar -->
+          <div class="participant ai" id="ai-cam">
+            <div class="ai-avatar">
+              <div class="avatar-ring">
+                <div class="avatar-face">
+                  <div class="avatar-eye left"></div>
+                  <div class="avatar-eye right"></div>
+                  <div class="avatar-mouth"></div>
+                </div>
+              </div>
+            </div>
+            <div class="participant-label">
+              <span class="name-dot online"></span>
+              AI 面试官
+            </div>
+            <!-- Speaking indicator -->
+            <div class="speaking-indicator hidden" id="speaking-indicator">
+              <span></span><span></span><span></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Transcript area -->
+        <div class="transcript-area" id="transcript">
+          <div class="transcript-placeholder">
+            <span>面试开始后，对话将显示在这里</span>
+            <div class="waveform"><span></span><span></span><span></span><span></span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input bar -->
+      <div class="input-bar">
+        <button id="mic-btn" class="ctrl-btn" title="语音输入">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="22" y1="2" x2="11" y2="13"></line>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
           </svg>
         </button>
-      </form>
-    </main>
+        <div class="input-wrap">
+          <textarea id="input" rows="1" placeholder="输入回答..." autofocus></textarea>
+        </div>
+        <button id="send-btn" class="ctrl-btn send" title="发送">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"/>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Recording indicator bar -->
+      <div id="recording-bar" class="recording-bar hidden">
+        <span class="rec-dot"></span> 录音中...
+      </div>
+
+      <!-- Bottom controls -->
+      <div class="bottom-bar">
+        <div class="stage-dots">
+          <span class="sdot active" data-s="1"></span>
+          <span class="sdot" data-s="2"></span>
+          <span class="sdot" data-s="3"></span>
+          <span class="sdot" data-s="4"></span>
+        </div>
+        <div class="stage-labels" id="stage-labels">
+          <span class="slabel active">自我介绍</span>
+          <span class="slabel">简历提问</span>
+          <span class="slabel">场景技术</span>
+          <span class="slabel">算法挑战</span>
+        </div>
+        <div class="bottom-actions">
+          <button id="next-stage-btn" class="btn-primary small">下一环节 →</button>
+          <button id="leave-btn" class="btn-leave" title="重新开始">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+              <polyline points="16 17 21 12 16 7"/>
+              <line x1="21" y1="12" x2="9" y2="12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+    </div>
   </div>
   <script src="app.js"></script>
 </body>
