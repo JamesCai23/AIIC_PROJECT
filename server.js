@@ -185,6 +185,43 @@ async function streamChat(res, messages, model) {
   }
 }
 
+// ── TTS Endpoint ─────────────────────────────────────────────────
+
+app.post('/api/tts', async (req, res) => {
+  const { text } = req.body;
+  if (!text) return res.status(400).json({ error: 'Text is required' });
+
+  try {
+    const result = await fetch('https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${process.env.ALI_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'cosyvoice-v3-flash',
+        input: {
+          text: text.slice(0, 1000),
+          voice: 'longanyang',
+          format: 'mp3',
+        },
+      }),
+    });
+
+    const data = await result.json();
+    if (!data.output?.audio?.url) {
+      throw new Error(data.message || 'TTS API failed');
+    }
+
+    const audioRes = await fetch(data.output.audio.url);
+    res.setHeader('Content-Type', 'audio/mpeg');
+    audioRes.body.pipe(res);
+  } catch (err) {
+    console.error('TTS error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Start Server ────────────────────────────────────────────────
 
 app.listen(port, () => {

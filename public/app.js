@@ -299,22 +299,28 @@ function showSpeaking(on) {
 }
 
 // ── TTS (Text-to-Speech) ────────────────────────────────────────
-function speakText(text) {
+let currentAudio = null;
+
+async function speakText(text) {
   if (!state.ttsEnabled || !text) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = 'zh-CN';
-  utterance.rate = 1.1;
-  const voices = window.speechSynthesis.getVoices();
-  if (voices.length) {
-    const zh = voices.find(v => v.lang.startsWith('zh'));
-    if (zh) utterance.voice = zh;
-  }
-  window.speechSynthesis.speak(utterance);
+  try {
+    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
+    const res = await fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) return;
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    currentAudio = new Audio(url);
+    currentAudio.onended = () => { URL.revokeObjectURL(url); currentAudio = null; };
+    currentAudio.play();
+  } catch (_) {}
 }
 
 function stopTTS() {
-  window.speechSynthesis.cancel();
+  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
 }
 
 function toggleTTS() {
