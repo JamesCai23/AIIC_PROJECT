@@ -172,6 +172,52 @@ function stopCamera() {
   }
 }
 
+// ── Video Grid Resize ────────────────────────────────────────────
+(function initResize() {
+  const handle = $('resize-handle');
+  const grid = $('video-grid');
+  const main = document.querySelector('.main-content');
+  if (!handle || !grid || !main) return;
+
+  let isResizing = false;
+  let startY = 0;
+  let startHeight = 0;
+
+  function onStart(e) {
+    isResizing = true;
+    handle.classList.add('active');
+    startY = e.type === 'mousedown' ? e.clientY : e.touches[0].clientY;
+    startHeight = grid.offsetHeight;
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+  }
+
+  function onMove(e) {
+    if (!isResizing) return;
+    const currentY = e.type === 'mousemove' ? e.clientY : e.touches[0].clientY;
+    const delta = currentY - startY;
+    const mainRect = main.getBoundingClientRect();
+    const maxHeight = mainRect.height - 20;
+    const newHeight = Math.max(120, Math.min(startHeight + delta, maxHeight));
+    grid.style.height = newHeight + 'px';
+  }
+
+  function onEnd() {
+    if (!isResizing) return;
+    isResizing = false;
+    handle.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  }
+
+  handle.addEventListener('mousedown', onStart);
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onEnd);
+  handle.addEventListener('touchstart', onStart, { passive: true });
+  window.addEventListener('touchmove', onMove, { passive: true });
+  window.addEventListener('touchend', onEnd);
+})();
+
 // ── Start Interview ─────────────────────────────────────────────
 startBtn.addEventListener('click', async () => {
   const resume = resumeInput.value.trim();
