@@ -10,6 +10,7 @@ const state = {
   cameraStream: null,
   timerInterval: null,
   elapsedSeconds: 0,
+  ttsEnabled: true,
 };
 
 const STAGE_LABELS = { 1: '自我介绍', 2: '简历提问', 3: '场景技术', 4: '算法挑战' };
@@ -29,6 +30,7 @@ const transcript = $('transcript');
 const input = $('input');
 const sendBtn = $('send-btn');
 const micBtn = $('mic-btn');
+const ttsBtn = $('tts-btn');
 const resumeInput = $('resume-input');
 const resumeFile = $('resume-file');
 const fileName = $('file-name');
@@ -138,6 +140,7 @@ leaveBtn.addEventListener('click', () => {
   if (state.isStreaming) return;
   stopCamera();
   stopTimer();
+  stopTTS();
   if (state.recognition) { try { state.recognition.abort(); } catch (_) {} }
 
   state.phase = 'lobby';
@@ -230,6 +233,7 @@ async function sendToAI(userMessage) {
             state.history.push({ role: 'assistant', content: fullContent });
           }
 
+          speakText(fullContent);
           finish();
           return;
         }
@@ -284,13 +288,42 @@ function finishInterview() {
   stopTimer();
   nextStageBtn.textContent = '面试已结束 ✓';
   nextStageBtn.disabled = true;
-  addTranscript('ai', '🎉 **面试全部结束！**\n\n感谢你参与本次模拟面试。你可以点击左下角"离开"按钮回到等候室。');
+  const msg = '🎉 **面试全部结束！**\n\n感谢你参与本次模拟面试。你可以点击左下角"离开"按钮回到等候室。';
+  addTranscript('ai', msg);
+  speakText('面试全部结束，感谢你参与本次模拟面试。');
 }
 
 // ── Speaking indicator ──────────────────────────────────────────
 function showSpeaking(on) {
   speakingIndicator.classList.toggle('hidden', !on);
 }
+
+// ── TTS (Text-to-Speech) ────────────────────────────────────────
+function speakText(text) {
+  if (!state.ttsEnabled || !text) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = 'zh-CN';
+  utterance.rate = 1.1;
+  const voices = window.speechSynthesis.getVoices();
+  if (voices.length) {
+    const zh = voices.find(v => v.lang.startsWith('zh'));
+    if (zh) utterance.voice = zh;
+  }
+  window.speechSynthesis.speak(utterance);
+}
+
+function stopTTS() {
+  window.speechSynthesis.cancel();
+}
+
+function toggleTTS() {
+  state.ttsEnabled = !state.ttsEnabled;
+  ttsBtn.classList.toggle('muted', !state.ttsEnabled);
+  if (!state.ttsEnabled) stopTTS();
+}
+
+ttsBtn.addEventListener('click', toggleTTS);
 
 // ── Stage UI ────────────────────────────────────────────────────
 function updateStageUI(stage) {
