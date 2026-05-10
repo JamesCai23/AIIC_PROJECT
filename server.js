@@ -215,7 +215,8 @@ app.post('/api/tts', async (req, res) => {
 
     const audioRes = await fetch(data.output.audio.url);
     res.setHeader('Content-Type', 'audio/mpeg');
-    audioRes.body.pipe(res);
+    const { Readable } = await import('stream');
+    Readable.fromWeb(audioRes.body).pipe(res);
   } catch (err) {
     console.error('TTS error:', err);
     res.status(500).json({ error: err.message });
