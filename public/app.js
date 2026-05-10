@@ -1,113 +1,3 @@
-// ── State ────────────────────────────────────────────────────────
-const state = {
-  phase: 'lobby',
-  stage: 1,
-  position: 'algorithm',
-  resume: '',
-  history: [],
-  isStreaming: false,
-  isRecording: false,
-  recognition: null,
-  cameraStream: null,
-  timerInterval: null,
-  elapsedSeconds: 0,
-  ttsEnabled: true,
-  positions: [],
-};
-
-const STAGE_LABELS = { 1: '自我介绍', 2: '简历提问', 3: '场景技术', 4: '算法挑战' };
-let POSITION_STAGE_LABELS = null;
-
-function getStageLabel(stage) {
-  if (POSITION_STAGE_LABELS) return POSITION_STAGE_LABELS[stage] || STAGE_LABELS[stage];
-  return STAGE_LABELS[stage];
-}
-
-function getSystemMessage(msg) {
-  if (msg === '__START_INTERVIEW__') return '请开始面试';
-  const m = msg.match(/^__START_STAGE__(\d)$/);
-  if (m) return `我们已经进入下一阶段（${getStageLabel(parseInt(m[1]))}），请根据本阶段要求继续面试。`;
-  return msg;
-}
-
-// ── DOM refs ────────────────────────────────────────────────────
-const $ = (id) => document.getElementById(id);
-const lobby = $('lobby');
-const meeting = $('meeting');
-const transcript = $('transcript');
-const input = $('input');
-const sendBtn = $('send-btn');
-const micBtn = $('mic-btn');
-const ttsBtn = $('tts-btn');
-const resumeInput = $('resume-input');
-const resumeFile = $('resume-file');
-const fileName = $('file-name');
-const startBtn = $('start-btn');
-const nextStageBtn = $('next-stage-btn');
-const leaveBtn = $('leave-btn');
-const recordingBar = $('recording-bar');
-const webcam = $('webcam');
-const camPlaceholder = $('cam-placeholder');
-const stageLabel = $('stage-label');
-const timerEl = $('timer');
-const speakingIndicator = $('speaking-indicator');
-
-// ── Positions / Skills ──────────────────────────────────────────
-
-async function loadPositions() {
-  try {
-    const res = await fetch('/api/positions');
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    state.positions = await res.json();
-    renderPositions(state.positions);
-  } catch (err) {
-    console.error('Failed to load positions:', err);
-    // fallback: use default algorithm
-    state.positions = [{ id: 'algorithm', label: '算法', icon: '🧮', description: '算法实习岗位', stageLabels: ['自我介绍', '简历提问', '场景技术', '算法挑战'] }];
-    renderPositions(state.positions);
-  }
-}
-
-function renderPositions(positions) {
-  const container = $('position-options');
-  container.innerHTML = '';
-  positions.forEach((p, i) => {
-    const btn = document.createElement('button');
-    btn.className = `pos-btn${i === 0 ? ' active' : ''}`;
-    btn.dataset.id = p.id;
-    btn.innerHTML = `
-      <span class="pos-icon">${p.icon || '🎯'}</span>
-      <span class="pos-label">${p.label}</span>
-      <span class="pos-desc">${p.description || ''}</span>
-    `;
-    btn.addEventListener('click', () => selectPosition(p.id));
-    container.appendChild(btn);
-  });
-
-  // Set default selection
-  if (positions.length > 0) {
-    selectPosition(positions[0].id);
-  }
-}
-
-function selectPosition(id) {
-  state.position = id;
-  document.querySelectorAll('.pos-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.id === id);
-  });
-
-  const pos = state.positions.find(p => p.id === id);
-  if (pos && pos.stageLabels) {
-    POSITION_STAGE_LABELS = {};
-    pos.stageLabels.forEach((label, i) => { POSITION_STAGE_LABELS[i + 1] = label; });
-  } else {
-    POSITION_STAGE_LABELS = null;
-  }
-}
-
-// Load positions on startup
-loadPositions();
-
 // ── File Upload ─────────────────────────────────────────────────
 resumeFile.addEventListener('change', (e) => {
   const file = e.target.files[0];
@@ -122,101 +12,13 @@ resumeFile.addEventListener('change', (e) => {
 input.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
 });
+
 function autoResize() {
   input.style.height = 'auto';
   input.style.height = Math.min(input.scrollHeight, 100) + 'px';
 }
 input.addEventListener('input', autoResize);
 sendBtn.addEventListener('click', handleSend);
-
-// ── Timer ───────────────────────────────────────────────────────
-function startTimer() {
-  state.elapsedSeconds = 0;
-  updateTimerDisplay();
-  state.timerInterval = setInterval(() => {
-    state.elapsedSeconds++;
-    updateTimerDisplay();
-  }, 1000);
-}
-
-function stopTimer() {
-  clearInterval(state.timerInterval);
-  state.timerInterval = null;
-}
-
-function updateTimerDisplay() {
-  const m = String(Math.floor(state.elapsedSeconds / 60)).padStart(2, '0');
-  const s = String(state.elapsedSeconds % 60).padStart(2, '0');
-  timerEl.textContent = `${m}:${s}`;
-}
-
-// ── Camera ──────────────────────────────────────────────────────
-async function startCamera() {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: { ideal: 320 }, height: { ideal: 240 }, facingMode: 'user' },
-      audio: false,
-    });
-    webcam.srcObject = stream;
-    state.cameraStream = stream;
-    camPlaceholder.classList.add('hidden');
-  } catch (_) {
-    camPlaceholder.classList.remove('hidden');
-  }
-}
-
-function stopCamera() {
-  if (state.cameraStream) {
-    state.cameraStream.getTracks().forEach(t => t.stop());
-    state.cameraStream = null;
-  }
-}
-
-// ── Video Grid Resize ────────────────────────────────────────────
-(function initResize() {
-  const handle = $('resize-handle');
-  const grid = $('video-grid');
-  const main = document.querySelector('.main-content');
-  if (!handle || !grid || !main) return;
-
-  let isResizing = false;
-  let startY = 0;
-  let startHeight = 0;
-
-  function onStart(e) {
-    isResizing = true;
-    handle.classList.add('active');
-    startY = e.type === 'mousedown' ? e.clientY : e.touches[0].clientY;
-    startHeight = grid.offsetHeight;
-    document.body.style.cursor = 'ns-resize';
-    document.body.style.userSelect = 'none';
-  }
-
-  function onMove(e) {
-    if (!isResizing) return;
-    const currentY = e.type === 'mousemove' ? e.clientY : e.touches[0].clientY;
-    const delta = currentY - startY;
-    const mainRect = main.getBoundingClientRect();
-    const maxHeight = mainRect.height - 20;
-    const newHeight = Math.max(120, Math.min(startHeight + delta, maxHeight));
-    grid.style.height = newHeight + 'px';
-  }
-
-  function onEnd() {
-    if (!isResizing) return;
-    isResizing = false;
-    handle.classList.remove('active');
-    document.body.style.cursor = '';
-    document.body.style.userSelect = '';
-  }
-
-  handle.addEventListener('mousedown', onStart);
-  window.addEventListener('mousemove', onMove);
-  window.addEventListener('mouseup', onEnd);
-  handle.addEventListener('touchstart', onStart, { passive: true });
-  window.addEventListener('touchmove', onMove, { passive: true });
-  window.addEventListener('touchend', onEnd);
-})();
 
 // ── Start Interview ─────────────────────────────────────────────
 startBtn.addEventListener('click', async () => {
@@ -232,6 +34,7 @@ startBtn.addEventListener('click', async () => {
   state.phase = 'interview';
   state.stage = 1;
   state.history = [];
+  state.interviewId = null;
 
   lobby.classList.add('hidden');
   meeting.classList.remove('hidden');
@@ -239,6 +42,7 @@ startBtn.addEventListener('click', async () => {
   clearTranscript();
   updateStageUI(1);
   nextStageBtn.textContent = '下一环节 →';
+  nextStageBtn.disabled = false;
 
   await startCamera();
   startTimer();
@@ -257,6 +61,7 @@ leaveBtn.addEventListener('click', () => {
   state.stage = 1;
   state.history = [];
   state.isRecording = false;
+  state.interviewId = null;
 
   meeting.classList.add('hidden');
   lobby.classList.remove('hidden');
@@ -264,7 +69,6 @@ leaveBtn.addEventListener('click', () => {
   nextStageBtn.textContent = '下一环节 →';
   nextStageBtn.disabled = false;
 
-  // Reset camera placeholder
   camPlaceholder.classList.remove('hidden');
 });
 
@@ -340,7 +144,6 @@ async function sendToAI(userMessage) {
           if (!isSystemTrigger || userMessage === '__START_INTERVIEW__') {
             state.history.push({ role: 'assistant', content: fullContent });
           } else if (userMessage.startsWith('__START_STAGE__')) {
-            // For stage transitions, push the greeting as first message of new stage
             state.history.push({ role: 'assistant', content: fullContent });
           }
 
@@ -389,183 +192,140 @@ nextStageBtn.addEventListener('click', async () => {
     nextStageBtn.textContent = '结束面试';
   }
 
-  // Don't add transition to visible history
   await sendToAI(`__START_STAGE__${state.stage}`);
 });
 
-// ── Finish Interview ────────────────────────────────────────────
-function finishInterview() {
+// ── Finish Interview & Feedback ─────────────────────────────────
+async function finishInterview() {
   state.phase = 'finished';
   stopTimer();
-  nextStageBtn.textContent = '面试已结束 ✓';
+  nextStageBtn.textContent = '生成反馈报告中...';
   nextStageBtn.disabled = true;
-  const msg = '🎉 **面试全部结束！**\n\n感谢你参与本次模拟面试。你可以点击左下角"离开"按钮回到等候室。';
-  addTranscript('ai', msg);
-  speakText('面试全部结束，感谢你参与本次模拟面试。');
-}
 
-// ── Speaking indicator ──────────────────────────────────────────
-function showSpeaking(on) {
-  speakingIndicator.classList.toggle('hidden', !on);
-}
+  addTranscript('ai', '⏳ **面试结束，正在生成反馈报告...**');
 
-// ── TTS (Text-to-Speech) ────────────────────────────────────────
-let currentAudio = null;
-
-async function speakText(text) {
-  if (!state.ttsEnabled || !text) return;
   try {
-    if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-    const res = await fetch('/api/tts', {
+    const res = await fetch('/api/interview/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      body: JSON.stringify({
+        position: state.position,
+        resume: state.resume,
+        history: state.history,
+        startTime: new Date(Date.now() - state.elapsedSeconds * 1000).toISOString(),
+        duration: state.elapsedSeconds,
+      }),
     });
-    if (!res.ok) return;
-    const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    currentAudio = new Audio(url);
-    currentAudio.onended = () => { URL.revokeObjectURL(url); currentAudio = null; };
-    currentAudio.play();
-  } catch (_) {}
-}
 
-function stopTTS() {
-  if (currentAudio) { currentAudio.pause(); currentAudio = null; }
-}
+    // Show the feedback via SSE stream
+    const msgEl = addTranscript('ai', '');
+    const parent = msgEl.closest('.tmsg');
+    if (parent) parent.classList.add('typing');
 
-function toggleTTS() {
-  state.ttsEnabled = !state.ttsEnabled;
-  ttsBtn.classList.toggle('muted', !state.ttsEnabled);
-  if (!state.ttsEnabled) stopTTS();
-}
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let fullContent = '';
+    let interviewId = null;
 
-ttsBtn.addEventListener('click', toggleTTS);
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-// ── Stage UI ────────────────────────────────────────────────────
-function updateStageUI(stage) {
-  stageLabel.textContent = `${stage} / 4 ${getStageLabel(stage)}`;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
-  document.querySelectorAll('.sdot').forEach(d => {
-    const s = parseInt(d.dataset.s);
-    d.classList.remove('active', 'completed');
-    if (s < stage) d.classList.add('completed');
-    if (s === stage) d.classList.add('active');
-  });
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const data = JSON.parse(line.slice(6));
 
-  document.querySelectorAll('.slabel').forEach((l, i) => {
-    const idx = i + 1;
-    l.classList.remove('active', 'completed');
-    if (idx < stage) l.classList.add('completed');
-    if (idx === stage) l.classList.add('active');
-    // Update label text from position-specific labels
-    l.textContent = getStageLabel(idx);
-  });
-}
+        if (data.error) {
+          msgEl.textContent = `反馈生成失败：${data.error}`;
+          if (parent) parent.classList.remove('typing');
+          resetFinishBtn();
+          return;
+        }
 
-// ── Speech-to-Text ──────────────────────────────────────────────
-const SpeechRecog = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (data.meta) {
+          interviewId = data.meta.interviewId;
+          state.interviewId = interviewId;
+          continue;
+        }
 
-if (SpeechRecog) {
-  state.recognition = new SpeechRecog();
-  state.recognition.lang = 'zh-CN';
-  state.recognition.continuous = true;
-  state.recognition.interimResults = true;
+        if (data.done) {
+          fullContent = data.fullContent;
+          msgEl.innerHTML = formatMessage(fullContent);
+          if (parent) parent.classList.remove('typing');
 
-  state.recognition.onresult = (e) => {
-    let final = '';
-    let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
-      if (e.results[i].isFinal) final += e.results[i][0].transcript;
-      else interim += e.results[i][0].transcript;
+          // Add download button after feedback
+          if (interviewId) {
+            addDownloadButton(interviewId);
+          } else {
+            // Try to save manually via a separate call if ID wasn't returned
+            resetFinishBtn();
+          }
+          finish();
+          return;
+        }
+
+        if (data.content) {
+          fullContent += data.content;
+          msgEl.innerHTML = formatMessage(fullContent);
+          transcript.scrollTop = transcript.scrollHeight;
+        }
+      }
     }
-    if (final) input.value = (input.value || '') + final;
-    input.placeholder = interim ? `正在听: ${interim}...` : '输入回答...';
-    autoResize();
-  };
+  } catch (err) {
+    addTranscript('ai', `❌ 反馈生成失败：${err.message}。请稍后重试。`);
+  }
 
-  state.recognition.onend = () => {
-    if (state.isRecording && state.recognition) {
-      try { state.recognition.start(); } catch (_) {}
-    }
-  };
+  resetFinishBtn();
+  speakText('面试全部结束，反馈报告已生成。');
 
-  state.recognition.onerror = (e) => {
-    if (e.error === 'not-allowed') alert('请允许使用麦克风权限以使用语音输入功能。');
-    stopRecording();
-  };
-
-  micBtn.addEventListener('click', toggleRecording);
-} else {
-  micBtn.title = '不支持语音输入';
-  micBtn.style.opacity = '0.3';
-  micBtn.style.cursor = 'not-allowed';
+  function finish() {
+    state.isStreaming = false;
+    sendBtn.disabled = false;
+    showSpeaking(false);
+    nextStageBtn.textContent = '面试已结束 ✓';
+  }
 }
 
-function toggleRecording() {
-  if (!state.recognition) return;
-  state.isRecording ? stopRecording() : startRecording();
+function resetFinishBtn() {
+  state.isStreaming = false;
+  sendBtn.disabled = false;
+  showSpeaking(false);
+  nextStageBtn.textContent = '面试已结束 ✓';
+  nextStageBtn.disabled = true;
 }
 
-function startRecording() {
-  state.isRecording = true;
-  micBtn.classList.add('recording');
-  recordingBar.classList.remove('hidden');
-  input.placeholder = '正在聆听...';
-  try { state.recognition.start(); } catch (_) {}
-}
-
-function stopRecording() {
-  state.isRecording = false;
-  micBtn.classList.remove('recording');
-  recordingBar.classList.add('hidden');
-  input.placeholder = '输入回答...';
-  try { state.recognition.stop(); } catch (_) {}
-}
-
-// ── Transcript helpers ──────────────────────────────────────────
-function addTranscript(role, text) {
-  // Remove placeholder if present
-  const ph = transcript.querySelector('.transcript-placeholder');
-  if (ph) ph.remove();
-
+function addDownloadButton(interviewId) {
   const div = document.createElement('div');
-  div.className = `tmsg ${role}`;
-
-  const icon = document.createElement('div');
-  icon.className = 'tmsg-icon';
-  icon.textContent = role === 'ai' ? '🤖' : '👤';
-
-  const bubble = document.createElement('div');
-  bubble.className = 'tmsg-bubble';
-  if (text) bubble.innerHTML = formatMessage(text);
-
-  div.appendChild(icon);
-  div.appendChild(bubble);
+  div.className = 'tmsg';
+  div.innerHTML = `
+    <div class="tmsg-icon">📥</div>
+    <div class="tmsg-bubble feedback-actions">
+      <a href="/api/interviews/${interviewId}/download" class="download-btn" download>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        下载反馈报告
+      </a>
+    </div>
+  `;
   transcript.appendChild(div);
   transcript.scrollTop = transcript.scrollHeight;
-  return bubble;
 }
 
-function clearTranscript() {
-  transcript.innerHTML = '';
-}
-
-function escapeHtml(text) {
-  const d = document.createElement('div');
-  d.textContent = text;
-  return d.innerHTML;
-}
-
-function formatMessage(text) {
-  return escapeHtml(text)
-    .replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>')
-    .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-    .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br>');
-}
+// ── TTS toggle ──────────────────────────────────────────────────
+ttsBtn.addEventListener('click', toggleTTS);
 
 // ── Ctrl+Enter to send ──────────────────────────────────────────
 document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') handleSend();
 });
+
+// ── Init ────────────────────────────────────────────────────────
+loadPositions();

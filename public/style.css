@@ -522,6 +522,31 @@ body {
   50% { opacity: 0; }
 }
 
+/* ── Feedback download button ─────────────── */
+.feedback-actions {
+  padding: 16px 18px !important;
+  text-align: center;
+}
+
+.download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 20px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s;
+}
+.download-btn:hover { background: #2563eb; }
+.download-btn svg { flex-shrink: 0; }
+
 /* ── Input bar ───────────────────────────── */
 .input-bar {
   display: flex;
