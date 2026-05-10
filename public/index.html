@@ -3,6 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
   <title>AI 面试官 — 模拟面试</title>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -22,7 +24,14 @@
           </svg>
         </div>
         <h1>AI 模拟面试官</h1>
-        <p class="lobby-subtitle">针对实习岗位 · 智能面试练习 · 4个环节</p>
+        <p class="lobby-subtitle">智能面试练习 · 4个环节 · 多岗位选择</p>
+
+        <div class="position-area">
+          <label class="area-label">选择面试岗位</label>
+          <div class="position-options" id="position-options">
+            <!-- populated by JS -->
+          </div>
+        </div>
 
         <div class="resume-area">
           <label class="area-label">📄 上传简历（或粘贴内容）</label>

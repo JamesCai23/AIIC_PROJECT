@@ -2,6 +2,7 @@
 const state = {
   phase: 'lobby',
   stage: 1,
+  position: 'algorithm',
   resume: '',
   history: [],
   isStreaming: false,
@@ -11,14 +12,21 @@ const state = {
   timerInterval: null,
   elapsedSeconds: 0,
   ttsEnabled: true,
+  positions: [],
 };
 
 const STAGE_LABELS = { 1: '自我介绍', 2: '简历提问', 3: '场景技术', 4: '算法挑战' };
+let POSITION_STAGE_LABELS = null;
+
+function getStageLabel(stage) {
+  if (POSITION_STAGE_LABELS) return POSITION_STAGE_LABELS[stage] || STAGE_LABELS[stage];
+  return STAGE_LABELS[stage];
+}
 
 function getSystemMessage(msg) {
   if (msg === '__START_INTERVIEW__') return '请开始面试';
   const m = msg.match(/^__START_STAGE__(\d)$/);
-  if (m) return `我们已经进入下一阶段（${STAGE_LABELS[m[1]]}），请根据本阶段要求继续面试。`;
+  if (m) return `我们已经进入下一阶段（${getStageLabel(parseInt(m[1]))}），请根据本阶段要求继续面试。`;
   return msg;
 }
 
@@ -43,6 +51,62 @@ const camPlaceholder = $('cam-placeholder');
 const stageLabel = $('stage-label');
 const timerEl = $('timer');
 const speakingIndicator = $('speaking-indicator');
+
+// ── Positions / Skills ──────────────────────────────────────────
+
+async function loadPositions() {
+  try {
+    const res = await fetch('/api/positions');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    state.positions = await res.json();
+    renderPositions(state.positions);
+  } catch (err) {
+    console.error('Failed to load positions:', err);
+    // fallback: use default algorithm
+    state.positions = [{ id: 'algorithm', label: '算法', icon: '🧮', description: '算法实习岗位', stageLabels: ['自我介绍', '简历提问', '场景技术', '算法挑战'] }];
+    renderPositions(state.positions);
+  }
+}
+
+function renderPositions(positions) {
+  const container = $('position-options');
+  container.innerHTML = '';
+  positions.forEach((p, i) => {
+    const btn = document.createElement('button');
+    btn.className = `pos-btn${i === 0 ? ' active' : ''}`;
+    btn.dataset.id = p.id;
+    btn.innerHTML = `
+      <span class="pos-icon">${p.icon || '🎯'}</span>
+      <span class="pos-label">${p.label}</span>
+      <span class="pos-desc">${p.description || ''}</span>
+    `;
+    btn.addEventListener('click', () => selectPosition(p.id));
+    container.appendChild(btn);
+  });
+
+  // Set default selection
+  if (positions.length > 0) {
+    selectPosition(positions[0].id);
+  }
+}
+
+function selectPosition(id) {
+  state.position = id;
+  document.querySelectorAll('.pos-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.id === id);
+  });
+
+  const pos = state.positions.find(p => p.id === id);
+  if (pos && pos.stageLabels) {
+    POSITION_STAGE_LABELS = {};
+    pos.stageLabels.forEach((label, i) => { POSITION_STAGE_LABELS[i + 1] = label; });
+  } else {
+    POSITION_STAGE_LABELS = null;
+  }
+}
+
+// Load positions on startup
+loadPositions();
 
 // ── File Upload ─────────────────────────────────────────────────
 resumeFile.addEventListener('change', (e) => {
@@ -194,6 +258,7 @@ async function sendToAI(userMessage) {
         history: state.history,
         stage: state.stage,
         resume: state.resume,
+        position: state.position,
       }),
     });
 
@@ -333,7 +398,7 @@ ttsBtn.addEventListener('click', toggleTTS);
 
 // ── Stage UI ────────────────────────────────────────────────────
 function updateStageUI(stage) {
-  stageLabel.textContent = `${stage} / 4 ${STAGE_LABELS[stage]}`;
+  stageLabel.textContent = `${stage} / 4 ${getStageLabel(stage)}`;
 
   document.querySelectorAll('.sdot').forEach(d => {
     const s = parseInt(d.dataset.s);
@@ -347,6 +412,8 @@ function updateStageUI(stage) {
     l.classList.remove('active', 'completed');
     if (idx < stage) l.classList.add('completed');
     if (idx === stage) l.classList.add('active');
+    // Update label text from position-specific labels
+    l.textContent = getStageLabel(idx);
   });
 }
 
