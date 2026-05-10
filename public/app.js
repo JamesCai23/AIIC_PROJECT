@@ -109,6 +109,7 @@ async function sendToAI(userMessage) {
         stage: state.stage,
         resume: state.resume,
         position: state.position,
+        persona: state.persona,
       }),
     });
 
@@ -329,3 +330,4 @@ document.addEventListener('keydown', (e) => {
 
 // ── Init ────────────────────────────────────────────────────────
 loadPositions();
+loadPersonas();

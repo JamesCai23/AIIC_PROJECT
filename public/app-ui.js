@@ -50,6 +50,49 @@ function selectPosition(id) {
   }
 }
 
+// ── Personas ────────────────────────────────────────────────────
+
+async function loadPersonas() {
+  try {
+    const res = await fetch('/api/personas');
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    state.personas = await res.json();
+    renderPersonas(state.personas);
+  } catch (err) {
+    console.error('Failed to load personas:', err);
+  }
+}
+
+function renderPersonas(personas) {
+  const container = $('persona-options');
+  if (!container) return;
+  container.innerHTML = '';
+  personas.forEach((p, i) => {
+    const btn = document.createElement('button');
+    const isDefault = p.id === 'default';
+    btn.className = `persona-btn${isDefault ? ' active' : ''}`;
+    btn.dataset.id = p.id;
+    btn.innerHTML = `
+      <span class="persona-icon">${p.icon || '🤖'}</span>
+      <span class="persona-label">${p.label}</span>
+      <span class="persona-desc">${p.description || ''}</span>
+    `;
+    btn.addEventListener('click', () => selectPersona(p.id));
+    container.appendChild(btn);
+  });
+
+  // default to the 'default' persona, or first one
+  const defaultPersona = personas.find(p => p.id === 'default') || personas[0];
+  if (defaultPersona) selectPersona(defaultPersona.id);
+}
+
+function selectPersona(id) {
+  state.persona = id;
+  document.querySelectorAll('.persona-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.id === id);
+  });
+}
+
 // ── Timer ───────────────────────────────────────────────────────
 function startTimer() {
   state.elapsedSeconds = 0;

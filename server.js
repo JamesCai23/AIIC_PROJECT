@@ -2,7 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 
-import { getPositions, getSkillContent } from './lib/skills-loader.js';
+import { getPositions, getSkillContent, getPersonaContent, loadAllPersonas } from './lib/skills-loader.js';
 import { streamChat } from './lib/stream.js';
 import { saveInterview, listInterviews, getInterview, formatFeedbackMarkdown } from './lib/store.js';
 
@@ -21,7 +21,7 @@ app.use(express.static('public', {
 
 // ── Interview Prompt Builder ────────────────────────────────────
 
-function interviewPrompt(stage, resume, positionId) {
+function interviewPrompt(stage, resume, positionId, personaId) {
   const positions = getPositions();
   const pos = positions[positionId] || positions['algorithm'];
   const stageContent = pos?.stages?.[stage];
@@ -30,8 +30,17 @@ function interviewPrompt(stage, resume, positionId) {
     ? `\n\n## 候选人简历内容\n\`\`\`\n${resume.slice(0, 4000)}\n\`\`\``
     : '\n\n**注意：** 候选人尚未提交简历，请先请他们做自我介绍。';
 
+  // Inject persona instructions if a non-default persona is selected
+  let personaBlock = '';
+  if (personaId) {
+    const persona = getPersonaContent(personaId);
+    if (persona && persona.instructions) {
+      personaBlock = `\n\n## 面试风格指令\n${persona.instructions}\n`;
+    }
+  }
+
   if (stageContent) {
-    return `${stageContent}${resumeBlock}\n\n（你正在以AI面试官的身份与候选人交流，请始终保持角色。）`;
+    return `${personaBlock}${stageContent}${resumeBlock}\n\n（你正在以AI面试官的身份与候选人交流，请始终保持角色。）`;
   }
 
   return `你是一位专业、友善的AI面试官，正在为一家知名科技公司的实习岗位进行面试。\n\n当前阶段 ${stage}/4${resumeBlock}\n\n（你正在以AI面试官的身份与候选人交流，请始终保持角色。）`;
@@ -61,6 +70,17 @@ app.get('/api/positions', (req, res) => {
   res.json(list);
 });
 
+// ── Get all personas ────────────────────────────────────────────
+
+app.get('/api/personas', (req, res) => {
+  const personas = loadAllPersonas();
+  const list = Object.entries(personas).map(([id, p]) => ({
+    id,
+    ...p.meta,
+  }));
+  res.json(list);
+});
+
 // ── Generic Chat Endpoint ───────────────────────────────────────
 
 app.post('/api/chat', async (req, res) => {
@@ -82,13 +102,13 @@ app.post('/api/chat', async (req, res) => {
 // ── Interview Chat Endpoint ─────────────────────────────────────
 
 app.post('/api/interview/chat', async (req, res) => {
-  const { message, history = [], stage = 1, resume, model, position } = req.body;
+  const { message, history = [], stage = 1, resume, model, position, persona } = req.body;
 
   if (!message) {
     return res.status(400).json({ error: 'Message is required' });
   }
 
-  const systemPrompt = interviewPrompt(stage, resume, position);
+  const systemPrompt = interviewPrompt(stage, resume, position, persona);
 
   const messages = [
     { role: 'system', content: systemPrompt },

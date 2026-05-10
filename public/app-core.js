@@ -3,6 +3,7 @@ const state = {
   phase: 'lobby',
   stage: 1,
   position: 'algorithm',
+  persona: 'default',
   resume: '',
   history: [],
   isStreaming: false,
@@ -13,6 +14,7 @@ const state = {
   elapsedSeconds: 0,
   ttsEnabled: true,
   positions: [],
+  personas: [],
   interviewId: null,  // set after feedback is saved
 };
 
