@@ -11,12 +11,8 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.static('public'));
 
 const openai = new OpenAI({
-  baseURL: 'https://openrouter.ai/api/v1',
-  apiKey: process.env.OPENROUTER_API_KEY,
-  defaultHeaders: {
-    'HTTP-Referer': 'https://aiic-interview.local',
-    'X-Title': 'AI Interview Agent',
-  },
+  baseURL: 'https://api.deepseek.com',
+  apiKey: process.env.DEEPSEEK_API_KEY,
 });
 
 // ── Interview Stage System Prompts ──────────────────────────────
@@ -165,7 +161,7 @@ async function streamChat(res, messages, model) {
 
   try {
     const stream = await openai.chat.completions.create({
-      model: model || 'deepseek/deepseek-chat',
+      model: model || 'deepseek-chat',
       messages,
       stream: true,
     });
